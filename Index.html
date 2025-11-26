@@ -1,0 +1,1018 @@
+import React, { useState, useEffect } from 'react';
+import { 
+  Calculator, Search, PieChart, Shapes, Timer, PiggyBank, TrendingUp, Target,
+  Star, Trophy, User, Gamepad2, ArrowLeft, CheckCircle, XCircle, HelpCircle,
+  Award, School, X, ShoppingBag, Shield, Zap, Gift, Coins,
+  Sword, Clock, Book, Gem, Crown, Ghost, Heart, Sparkles, Anchor, HeartHandshake,
+  Percent, Divide, Lock, LogOut, KeyRound, Settings, Trash2, RefreshCw, Eye, Users, History, Loader2, Cloud
+} from 'lucide-react';
+
+// --- Firebase Imports ---
+import { initializeApp } from 'firebase/app';
+import { getAuth, signInAnonymously, signInWithCustomToken, onAuthStateChanged } from 'firebase/auth';
+import { getFirestore, doc, getDoc, setDoc, updateDoc, collection, getDocs, deleteDoc, onSnapshot } from 'firebase/firestore';
+
+// --- Firebase Initialization (Global) ---
+const firebaseConfig = JSON.parse(__firebase_config);
+const app = initializeApp(firebaseConfig);
+const auth = getAuth(app);
+const db = getFirestore(app);
+const appId = typeof __app_id !== 'undefined' ? __app_id : 'default-app-id';
+
+// Collection Path Helper
+const USERS_COLLECTION = 'game_users'; 
+const getUserRef = (username) => doc(db, 'artifacts', appId, 'public', 'data', USERS_COLLECTION, username.toLowerCase());
+const getUsersCollectionRef = () => collection(db, 'artifacts', appId, 'public', 'data', USERS_COLLECTION);
+
+// --- Dữ liệu Huy Hiệu (Badges) ---
+const BADGES_DATA = [
+  { id: 'first_win', type: 'badge', name: 'Mầm Non', icon: '🌱', desc: 'Hoàn thành bài học đầu tiên', effect: 'Tăng 5% Vàng nhận được', price: 0, condition: (score, streak) => score > 0 },
+  { id: 'streak_5', type: 'badge', name: 'Ngọn Lửa', icon: '🔥', desc: 'Đạt chuỗi 5 câu đúng liên tiếp', effect: 'Nhân đôi điểm thưởng Combo', price: 0, condition: (score, streak) => streak >= 5 },
+  { id: 'high_score_50', type: 'badge', name: 'Vương Miện', icon: '👑', desc: 'Đạt 50 điểm trong một lượt', effect: 'Hào quang lấp lánh quanh Avatar', price: 0, condition: (score, streak) => score >= 50 },
+];
+
+// --- Dữ liệu Cửa Hàng (Shop Items) ---
+const SHOP_ITEMS = [
+  { id: 'item_shield', type: 'item', name: 'Khiên Gỗ', icon: <Shield size={24} className="text-blue-500" />, desc: 'Bảo vệ chuỗi Combo khi sai 1 lần', effect: 'Chặn 1 lần mất chuỗi', price: 100 },
+  { id: 'item_potion', type: 'item', name: 'Thuốc Trí Tuệ', icon: <Zap size={24} className="text-yellow-500" />, desc: 'Tăng sự tập trung tối đa', effect: '+5 Vàng cho mỗi câu đúng', price: 150 },
+  { id: 'item_clock', type: 'item', name: 'Đồng Hồ Cát', icon: <Clock size={24} className="text-teal-500" />, desc: 'Làm chậm thời gian suy nghĩ', effect: 'Thêm 15s cho các bài thi', price: 200 },
+  { id: 'item_sword', type: 'item', name: 'Gươm Ánh Sáng', icon: <Sword size={24} className="text-red-500" />, desc: 'Vũ khí của hiệp sĩ dũng cảm', effect: '+3 Vàng (Thưởng dũng cảm)', price: 300 },
+  { id: 'item_book', type: 'item', name: 'Sách Phép', icon: <Book size={24} className="text-indigo-500" />, desc: 'Chứa đựng tri thức cổ đại', effect: 'Hiển thị 1 gợi ý mỗi màn chơi', price: 350 },
+  { id: 'item_shoes', type: 'item', name: 'Giày Tốc Độ', icon: <Anchor size={24} className="text-orange-500" />, desc: 'Di chuyển nhanh như gió', effect: '+2 Vàng tốc độ', price: 250 },
+  { id: 'item_gem', type: 'item', name: 'Ngọc Lục Bảo', icon: <Gem size={24} className="text-green-500" />, desc: 'Viên đá mang lại may mắn', effect: 'Tăng 10% tỉ lệ rơi Vàng', price: 400 },
+  { id: 'item_heart', type: 'item', name: 'Trái Tim Rồng', icon: <Heart size={24} className="text-rose-500" />, desc: 'Sức sống mãnh liệt', effect: 'Cho phép sai 3 lần không bị thua', price: 500 },
+  { id: 'item_hat', type: 'item', name: 'Mũ Phù Thủy', icon: <Gift size={24} className="text-purple-500" />, desc: 'Trang phục Halloween cực ngầu', effect: 'Thay đổi khung Avatar tím ma mị', price: 450 },
+  { id: 'item_cloak', type: 'item', name: 'Áo Choàng Tàng Hình', icon: <Ghost size={24} className="text-gray-400" />, desc: 'Thoắt ẩn thoắt hiện', effect: 'Hiệu ứng bóng mờ cho nhân vật', price: 600 },
+  { id: 'item_sparkle', type: 'item', name: 'Đũa Thần', icon: <Sparkles size={24} className="text-pink-400" />, desc: 'Biến mọi thứ thành vàng', effect: 'X2 Vàng nhận được vĩnh viễn', price: 1000 },
+  { id: 'item_crown', type: 'item', name: 'Vương Miện Vàng', icon: <Crown size={24} className="text-yellow-400" />, desc: 'Biểu tượng của nhà vua', effect: 'Mở khóa tất cả bài học VIP', price: 2000 },
+  { id: 'item_pet', type: 'item', name: 'Rồng Con', icon: '🐲', desc: 'Thú cưng dễ thương đi theo bạn', effect: 'Tự động thu thập Vàng rơi', price: 1500 },
+];
+
+// --- Helper Functions: Hydrate/Dehydrate Items ---
+// Chuyển đổi ID lưu trong DB thành Object đầy đủ để hiển thị
+const hydrateItems = (ids) => {
+  if (!Array.isArray(ids)) return [];
+  return ids.map(id => {
+    const shopItem = SHOP_ITEMS.find(i => i.id === id);
+    if (shopItem) return shopItem;
+    const badgeItem = BADGES_DATA.find(b => b.id === id);
+    if (badgeItem) return badgeItem;
+    return null;
+  }).filter(Boolean);
+};
+
+// --- Dữ liệu Game ---
+const GAMES_DATA = [
+  { id: 1, type: "MULTIPLICATION", title: "Đại Chiến Bảng Cửu Chương", desc: "Ôn tập phép nhân chia trong phạm vi 100.", grade: "Lớp 3", subject: "Số học", color: "from-orange-400 to-red-500", shadow: "shadow-orange-200", icon: <Calculator className="w-10 h-10 text-white" /> },
+  { id: 2, type: "FRACTION", title: "Thợ Săn Phân Số", desc: "Cộng trừ phân số, rút gọn phân số.", grade: "Lớp 4", subject: "Số học", color: "from-blue-400 to-cyan-500", shadow: "shadow-blue-200", icon: <PieChart className="w-10 h-10 text-white" /> },
+  { id: 3, type: "FIND_X", title: "Truy Tìm Ẩn Số X", desc: "Tìm thành phần chưa biết trong phép tính.", grade: "Lớp 3-4", subject: "Đại số", color: "from-purple-500 to-indigo-600", shadow: "shadow-purple-200", icon: <Search className="w-10 h-10 text-white" /> },
+  { id: 4, type: "GEOMETRY", title: "Kiến Trúc Sư Hình Học", desc: "Tính Chu vi & Diện tích Hình vuông, Hình chữ nhật.", grade: "Lớp 4", subject: "Hình học", color: "from-emerald-400 to-green-600", shadow: "shadow-emerald-200", icon: <Shapes className="w-10 h-10 text-white" /> },
+  { id: 5, type: "SPEED", title: "Đua Xe Vận Tốc", desc: "Toán chuyển động đều: v, s, t.", grade: "Lớp 5", subject: "Chuyển động", color: "from-yellow-400 to-amber-500", shadow: "shadow-yellow-200", icon: <Timer className="w-10 h-10 text-white" /> },
+  { id: 6, type: "PERCENTAGE", title: "Nhà Đầu Tư Tài Ba", desc: "Giải toán về Tỉ số phần trăm (%).", grade: "Lớp 5", subject: "Thực tế", color: "from-pink-400 to-rose-500", shadow: "shadow-pink-200", icon: <Percent className="w-10 h-10 text-white" /> },
+  { id: 7, type: "AVERAGE", title: "Chuyên Gia Thống Kê", desc: "Bài toán về Số Trung Bình Cộng.", grade: "Lớp 4", subject: "Số học", color: "from-teal-400 to-cyan-600", shadow: "shadow-teal-200", icon: <TrendingUp className="w-10 h-10 text-white" /> },
+  { id: 8, type: "DECIMAL", title: "Xạ Thủ Số Thập Phân", desc: "Cộng, trừ, nhân số thập phân.", grade: "Lớp 5", subject: "Số học", color: "from-violet-400 to-fuchsia-600", shadow: "shadow-violet-200", icon: <Target className="w-10 h-10 text-white" /> }
+];
+
+// --- Logic Sinh Câu Hỏi (Giữ nguyên) ---
+const generateQuestion = (type) => {
+  let q = { question: "", options: [], correct: 0, explain: "" };
+  const randomInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
+  const randomFloat = (min, max) => (Math.random() * (max - min) + min).toFixed(1);
+
+  switch (type) {
+    case "MULTIPLICATION":
+      const isDiv = Math.random() > 0.5;
+      if (isDiv) {
+        const d2 = randomInt(2, 9);
+        const ans = randomInt(2, 9);
+        const d1 = d2 * ans;
+        q.question = `${d1} : ${d2} = ?`;
+        q.correct = ans;
+        q.options = [ans, ans + 1, ans - 1, ans + 2].sort(() => Math.random() - 0.5);
+        q.explain = `Vì ${ans} x ${d2} = ${d1} nên ${d1} : ${d2} = ${ans}.`;
+      } else {
+        const a = randomInt(4, 9); const b = randomInt(5, 9);
+        q.question = `${a} x ${b} = ?`; q.correct = a * b;
+        q.options = [a * b, a * b + randomInt(1, 5), a * b - randomInt(1, 3), a * b + 10].sort(() => Math.random() - 0.5);
+        q.explain = `Theo bảng cửu chương: ${a} nhân ${b} bằng ${a*b}.`;
+      }
+      break;
+    case "FRACTION":
+      const n1 = randomInt(1, 5); const d = randomInt(3, 9);
+      const n2 = randomInt(1, 5);
+      q.question = `${n1}/${d} + ${n2}/${d} = ?`;
+      q.correct = `${n1+n2}/${d}`;
+      q.options = [`${n1+n2}/${d}`, `${Math.abs(n1-n2)}/${d}`, `${n1+n2}/${d*2}`, `${n1*n2}/${d}`].sort(() => Math.random() - 0.5);
+      q.explain = `Muốn cộng hai phân số cùng mẫu số, ta cộng hai tử số và giữ nguyên mẫu số.`;
+      break;
+    case "FIND_X":
+      const x = randomInt(10, 100);
+      const y = randomInt(10, 100);
+      const op = Math.random() > 0.5 ? '+' : '-';
+      if (op === '+') {
+        q.question = `Tìm x biết: x - ${y} = ${x}`;
+        q.correct = x + y;
+        q.explain = `Muốn tìm số bị trừ, ta lấy hiệu cộng với số trừ: ${x} + ${y} = ${x+y}`;
+      } else {
+        q.question = `Tìm x biết: ${x + y} - x = ${y}`;
+        q.correct = x;
+        q.explain = `Muốn tìm số trừ, ta lấy số bị trừ trừ đi hiệu: ${x + y} - ${y} = ${x}`;
+      }
+      q.options = [q.correct, q.correct + 10, q.correct - 5, q.correct + 5].sort(() => Math.random() - 0.5);
+      break;
+    case "GEOMETRY":
+      const isRect = Math.random() > 0.4;
+      if (isRect) {
+        const l = randomInt(5, 15);
+        const w = randomInt(2, l - 1);
+        const askArea = Math.random() > 0.5;
+        if (askArea) {
+          q.question = `Tính Diện tích hình chữ nhật có dài=${l}cm, rộng=${w}cm?`;
+          q.correct = `${l * w} cm²`;
+          q.options = [`${l * w} cm²`, `${(l + w) * 2} cm²`, `${l + w} cm²`, `${l * w * 2} cm²`].sort(() => Math.random() - 0.5);
+          q.explain = `Diện tích HCN = Dài x Rộng = ${l} x ${w} = ${l*w} (cm²).`;
+        } else {
+          q.question = `Tính Chu vi hình chữ nhật có dài=${l}cm, rộng=${w}cm?`;
+          q.correct = `${(l + w) * 2} cm`;
+          q.options = [`${(l + w) * 2} cm`, `${l * w} cm`, `${l + w} cm`, `${(l + w) * 4} cm`].sort(() => Math.random() - 0.5);
+          q.explain = `Chu vi HCN = (Dài + Rộng) x 2 = (${l} + ${w}) x 2 = ${(l+w)*2} (cm).`;
+        }
+      } else {
+        const side = randomInt(4, 12);
+        q.question = `Tính Chu vi hình vuông có cạnh ${side}m?`;
+        q.correct = `${side * 4} m`;
+        q.options = [`${side * 4} m`, `${side * side} m`, `${side + 4} m`, `${side * 2} m`].sort(() => Math.random() - 0.5);
+        q.explain = `Chu vi hình vuông = Cạnh x 4 = ${side} x 4 = ${side*4} (m).`;
+      }
+      break;
+    case "SPEED":
+      const mode = randomInt(1, 3);
+      const vel = randomInt(30, 60);
+      const time = randomInt(2, 5);
+      const dist = vel * time;
+      if (mode === 1) {
+        q.question = `Xe chạy vận tốc ${vel} km/giờ trong ${time} giờ. Tính quãng đường?`;
+        q.correct = `${dist} km`;
+        q.options = [`${dist} km`, `${dist + 10} km`, `${vel + time} km`, `${vel * time / 2} km`].sort(() => Math.random() - 0.5);
+        q.explain = `Quãng đường = Vận tốc x Thời gian = ${vel} x ${time} = ${dist} (km).`;
+      } else if (mode === 2) {
+        q.question = `Đi quãng đường ${dist} km hết ${time} giờ. Tính vận tốc?`;
+        q.correct = `${vel} km/giờ`;
+        q.options = [`${vel} km/giờ`, `${vel + 5} km/giờ`, `${dist - time} km/giờ`, `${dist + time} km/giờ`].sort(() => Math.random() - 0.5);
+        q.explain = `Vận tốc = Quãng đường : Thời gian = ${dist} : ${time} = ${vel} (km/giờ).`;
+      } else {
+        q.question = `Đi quãng đường ${dist} km với vận tốc ${vel} km/giờ. Mất bao lâu?`;
+        q.correct = `${time} giờ`;
+        q.options = [`${time} giờ`, `${time + 1} giờ`, `${time * 2} giờ`, `${dist - vel} giờ`].sort(() => Math.random() - 0.5);
+        q.explain = `Thời gian = Quãng đường : Vận tốc = ${dist} : ${vel} = ${time} (giờ).`;
+      }
+      break;
+    case "PERCENTAGE":
+      const total = randomInt(10, 50) * 10;
+      const percent = randomInt(1, 9) * 10;
+      const result = (total * percent) / 100;
+      q.question = `Tìm ${percent}% của ${total}?`;
+      q.correct = result;
+      q.options = [result, result * 2, result + 10, result / 2].sort(() => Math.random() - 0.5);
+      q.explain = `${percent}% của ${total} = ${total} x ${percent} : 100 = ${result}.`;
+      break;
+    case "AVERAGE":
+      const num1_avg = randomInt(10, 50);
+      const num2_avg = randomInt(10, 50);
+      const num3_avg = randomInt(10, 50);
+      const sum_avg = num1_avg + num2_avg + num3_avg;
+      const remainder = sum_avg % 3;
+      const finalNum3 = num3_avg - remainder;
+      const finalSum = num1_avg + num2_avg + finalNum3;
+      const avg = finalSum / 3;
+      q.question = `Trung bình cộng của ${num1_avg}, ${num2_avg} và ${finalNum3} là?`;
+      q.correct = avg;
+      q.options = [avg, avg + 2, avg - 1, avg * 2].sort(() => Math.random() - 0.5);
+      q.explain = `Trung bình cộng = Tổng chia cho số các số hạng: (${num1_avg} + ${num2_avg} + ${finalNum3}) : 3 = ${avg}.`;
+      break;
+    case "DECIMAL":
+      const f1 = parseFloat(randomFloat(1, 10));
+      const f2 = parseFloat(randomFloat(1, 10));
+      const opDec = Math.random() > 0.5 ? '+' : '-';
+      if (opDec === '+') {
+        const sumDec = (f1 + f2).toFixed(1);
+        q.question = `${f1} + ${f2} = ?`;
+        q.correct = sumDec;
+        q.options = [sumDec, (f1+f2+0.5).toFixed(1), (f1+f2-1.0).toFixed(1), (f1*f2).toFixed(1)].sort(() => Math.random() - 0.5);
+        q.explain = `Đặt tính rồi tính: ${f1} cộng ${f2} bằng ${sumDec}.`;
+      } else {
+        const maxF = Math.max(f1, f2);
+        const minF = Math.min(f1, f2);
+        const subDec = (maxF - minF).toFixed(1);
+        q.question = `${maxF} - ${minF} = ?`;
+        q.correct = subDec;
+        q.options = [subDec, (maxF-minF+0.2).toFixed(1), (maxF+minF).toFixed(1), (maxF-minF-0.5).toFixed(1)].sort(() => Math.random() - 0.5);
+        q.explain = `Đặt tính rồi tính: ${maxF} trừ ${minF} bằng ${subDec}.`;
+      }
+      break;
+    default:
+      q.question = "1 + 1 = ?"; q.correct = 2; q.options = [2, 3, 4, 5]; q.explain = "Phép tính cơ bản.";
+  }
+  return q;
+};
+
+// --- Components (Top Banner & Footer) ---
+const TopBanner = () => (
+  <div className="bg-gradient-to-r from-pink-500 to-rose-500 text-white text-center py-2 px-4 text-xs sm:text-sm font-bold tracking-wider uppercase flex items-center justify-center shadow-sm relative z-[60]">
+    <HeartHandshake className="mr-2 animate-pulse" size={16} />
+    Đồng hành cùng con yêu
+  </div>
+);
+
+const Footer = () => (
+  <footer className="bg-white border-t border-gray-200 py-6 mt-auto">
+    <div className="max-w-7xl mx-auto px-4 text-center flex flex-col items-center">
+      <p className="text-gray-400 font-semibold text-sm mb-2">
+        © 2024 Toán Tiểu Học Gamified. Học mà chơi - Chơi mà học.
+      </p>
+      <div className="flex items-center space-x-2 bg-indigo-50 px-4 py-2 rounded-full border border-indigo-100">
+        <span className="text-xs text-indigo-400 font-bold uppercase">Bảo trợ thiết kế</span>
+        <div className="h-4 w-px bg-indigo-200"></div>
+        <span className="text-sm font-black text-indigo-700">Chuyên gia Phong Thủy Cao Tuấn Tử Vi</span>
+      </div>
+    </div>
+  </footer>
+);
+
+// --- Admin Panel ---
+const AdminPanel = ({ onClose }) => {
+  const [users, setUsers] = useState({});
+  const [loading, setLoading] = useState(false);
+
+  // Load all users from Firestore
+  const loadUsers = async () => {
+    setLoading(true);
+    try {
+      const querySnapshot = await getDocs(getUsersCollectionRef());
+      const usersData = {};
+      querySnapshot.forEach((doc) => {
+        usersData[doc.id] = doc.data();
+      });
+      setUsers(usersData);
+    } catch (error) {
+      console.error("AdminPanel: Failed to fetch users", error);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    loadUsers();
+  }, []);
+
+  const handleDeleteUser = async (username) => {
+    if (window.confirm(`Bạn có chắc chắn muốn xóa tài khoản "${username}" không? Hành động này không thể hoàn tác.`)) {
+      try {
+        await deleteDoc(getUserRef(username));
+        const newUsers = { ...users };
+        delete newUsers[username];
+        setUsers(newUsers);
+      } catch (e) {
+        alert("Lỗi khi xóa tài khoản: " + e.message);
+      }
+    }
+  };
+
+  const handleResetPin = async (username) => {
+    if (window.confirm(`Đặt lại mật khẩu cho "${username}" về mặc định "000"?`)) {
+      try {
+        await updateDoc(getUserRef(username), { pin: "000" });
+        const newUsers = { ...users };
+        newUsers[username] = { ...newUsers[username], pin: "000" };
+        setUsers(newUsers);
+        alert(`Đã reset mật khẩu của ${username} thành 000`);
+      } catch (e) {
+        alert("Lỗi khi reset mật khẩu: " + e.message);
+      }
+    }
+  };
+
+  const userCount = Object.keys(users).length;
+
+  return (
+    <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl p-6 max-w-4xl w-full shadow-2xl animate-scale-up h-[85vh] flex flex-col">
+        <div className="flex justify-between items-center mb-6 border-b pb-4">
+          <div className="flex items-center space-x-3">
+            <div className="bg-red-100 p-2 rounded-xl text-red-600">
+              <Settings size={32} />
+            </div>
+            <div>
+              <h2 className="text-2xl font-black text-gray-800">Trang Quản Trị Viên</h2>
+              <p className="text-sm text-gray-500 flex items-center gap-2">
+                Quản lý tài khoản học sinh 
+                <span className="bg-gray-100 px-2 py-0.5 rounded-full text-xs font-bold text-gray-600 border border-gray-300">
+                  Tổng: {userCount}
+                </span>
+              </p>
+            </div>
+          </div>
+          <div className="flex items-center gap-2">
+            <button 
+              onClick={loadUsers} 
+              className="p-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors flex items-center gap-1 text-sm font-bold"
+              title="Làm mới dữ liệu"
+              disabled={loading}
+            >
+              <RefreshCw size={18} className={loading ? "animate-spin" : ""} /> {loading ? "Đang tải..." : "Làm mới"}
+            </button>
+            <button onClick={onClose} className="p-2 hover:bg-gray-100 rounded-full"><X size={28} className="text-gray-500" /></button>
+          </div>
+        </div>
+
+        <div className="flex-1 overflow-auto bg-gray-50 rounded-xl border border-gray-200 p-4">
+          {loading ? (
+             <div className="flex flex-col items-center justify-center h-full text-gray-400">
+               <Loader2 size={48} className="animate-spin mb-2 text-blue-500"/>
+               <p>Đang đồng bộ dữ liệu...</p>
+             </div>
+          ) : userCount === 0 ? (
+            <div className="flex flex-col items-center justify-center h-full text-gray-400">
+              <Users size={64} className="mb-4 opacity-20"/>
+              <p className="text-lg font-bold">Danh sách trống</p>
+              <p className="text-sm">Chưa có tài khoản học sinh nào được đăng ký trên hệ thống.</p>
+            </div>
+          ) : (
+            <table className="w-full text-left border-collapse">
+              <thead>
+                <tr className="text-sm text-gray-500 border-b border-gray-200">
+                  <th className="py-3 px-4 font-bold">Tên Hiệp Sĩ</th>
+                  <th className="py-3 px-4 font-bold text-center">PIN</th>
+                  <th className="py-3 px-4 font-bold text-center">Vàng</th>
+                  <th className="py-3 px-4 font-bold text-center">Thành tích</th>
+                  <th className="py-3 px-4 font-bold text-right">Hành động</th>
+                </tr>
+              </thead>
+              <tbody>
+                {Object.entries(users).map(([name, data]) => (
+                  <tr key={name} className="bg-white border-b border-gray-100 hover:bg-blue-50 transition-colors">
+                    <td className="py-3 px-4 font-bold text-gray-800 flex items-center">
+                      <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${name}`} className="w-8 h-8 rounded-full mr-2 bg-gray-200" alt="avt"/>
+                      {name}
+                    </td>
+                    <td className="py-3 px-4 text-center">
+                      <span className="font-mono bg-gray-100 px-2 py-1 rounded text-gray-700 text-sm tracking-widest border border-gray-200">{data.pin}</span>
+                    </td>
+                    <td className="py-3 px-4 text-center text-yellow-600 font-bold">{data.currency || 500}</td>
+                    <td className="py-3 px-4 text-center text-gray-500 text-xs">
+                       {data.history ? Object.keys(data.history).length : 0} trò chơi
+                    </td>
+                    <td className="py-3 px-4 text-right space-x-2">
+                      <button 
+                        onClick={() => handleResetPin(name)}
+                        className="p-2 bg-yellow-100 text-yellow-700 rounded-lg hover:bg-yellow-200 transition-colors shadow-sm" 
+                        title="Reset PIN về 000"
+                      >
+                        <RefreshCw size={16} />
+                      </button>
+                      <button 
+                        onClick={() => handleDeleteUser(name)}
+                        className="p-2 bg-red-100 text-red-600 rounded-lg hover:bg-red-200 transition-colors shadow-sm" 
+                        title="Xóa tài khoản"
+                      >
+                        <Trash2 size={16} />
+                      </button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          )}
+        </div>
+        <div className="mt-4 text-right text-xs text-gray-400 flex items-center justify-end">
+          <Cloud size={14} className="mr-1"/> Dữ liệu được lưu trữ trên Cloud Database an toàn.
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- Modals (Shop & Profile) ---
+const ShopModal = ({ isOpen, onClose, currency, onBuy, inventory }) => {
+  if (!isOpen) return null;
+  return (
+    <div className="fixed inset-0 bg-black/80 z-[80] flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl p-6 max-w-4xl w-full shadow-2xl animate-scale-up border-4 border-yellow-200 h-[85vh] flex flex-col">
+        <div className="flex justify-between items-center mb-6">
+          <div className="flex items-center space-x-2">
+            <ShoppingBag className="text-yellow-600" size={32} />
+            <h2 className="text-3xl font-black text-yellow-800">Cửa Hàng Phép Thuật</h2>
+          </div>
+          <button onClick={onClose}><X size={28} className="text-gray-400 hover:text-gray-600" /></button>
+        </div>
+        <div className="bg-gradient-to-r from-yellow-50 to-orange-50 p-4 rounded-2xl flex items-center justify-between mb-6 border border-yellow-200 shadow-sm">
+           <div className="flex flex-col">
+             <span className="text-sm font-bold text-yellow-800 uppercase tracking-wide">Tài sản hiện có</span>
+             <span className="text-xs text-yellow-600">Mua sắm để mạnh mẽ hơn!</span>
+           </div>
+           <div className="flex items-center bg-white px-5 py-2 rounded-full shadow-md border border-yellow-100">
+             <Coins size={24} className="text-yellow-500 mr-2 fill-yellow-500" />
+             <span className="text-2xl font-black text-yellow-600">{currency}</span>
+           </div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 overflow-y-auto p-2 flex-1">
+          {SHOP_ITEMS.map((item) => {
+            const isOwned = inventory.some(i => i.id === item.id);
+            const canAfford = currency >= item.price;
+            return (
+              <div key={item.id} className={`relative p-4 rounded-2xl border-2 flex flex-col justify-between transition-all duration-200 ${isOwned ? 'bg-gray-50 border-gray-200 opacity-60' : 'bg-white border-blue-50 hover:border-blue-400 hover:shadow-lg hover:-translate-y-1'}`}>
+                {isOwned && <div className="absolute top-2 right-2 bg-green-100 text-green-700 text-[10px] font-bold px-2 py-0.5 rounded-full">Đã có</div>}
+                <div className="flex justify-between items-start mb-3">
+                   <div className="w-12 h-12 bg-blue-50 rounded-xl flex items-center justify-center text-2xl shadow-sm">{item.icon}</div>
+                   {!isOwned && <span className="text-sm font-bold text-yellow-600 flex items-center bg-yellow-50 px-2 py-1 rounded-lg"><Coins size={14} className="mr-1 fill-yellow-500"/> {item.price}</span>}
+                </div>
+                <div className="mb-3">
+                  <h3 className="font-bold text-gray-800 text-lg leading-tight mb-1">{item.name}</h3>
+                  <p className="text-xs text-gray-500 mb-2 h-8 leading-snug">{item.desc}</p>
+                  <div className="flex items-start"><Sparkles size={12} className="text-blue-500 mr-1 mt-0.5 flex-shrink-0" /><p className="text-xs font-bold text-blue-600">{item.effect}</p></div>
+                </div>
+                <button onClick={() => !isOwned && canAfford && onBuy(item)} disabled={isOwned || !canAfford} className={`mt-auto w-full py-2.5 rounded-xl font-bold text-sm transition-all flex items-center justify-center ${isOwned ? 'bg-gray-200 text-gray-500 cursor-default' : canAfford ? 'bg-gradient-to-r from-yellow-400 to-orange-400 text-white hover:shadow-md hover:scale-[1.02] active:scale-95' : 'bg-gray-100 text-gray-400 cursor-not-allowed'}`}>{isOwned ? "Đã sở hữu" : canAfford ? "Mua ngay" : "Không đủ tiền"}</button>
+              </div>
+            )
+          })}
+        </div>
+      </div>
+    </div>
+  );
+};
+
+const ProfileModal = ({ isOpen, onClose, user, inventory, equipped, onEquip }) => {
+  if (!isOpen) return null;
+  const slots = [0, 1, 2, 3, 4]; 
+  return (
+    <div className="fixed inset-0 bg-black/80 z-[80] flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl p-6 max-w-5xl w-full shadow-2xl animate-scale-up h-[90vh] flex flex-col overflow-hidden relative">
+        <button onClick={onClose} className="absolute top-6 right-6 z-10 p-2 bg-gray-100 rounded-full hover:bg-gray-200 transition-colors"><X size={24} className="text-gray-600" /></button>
+        <div className="flex flex-col md:flex-row h-full gap-8">
+          <div className="w-full md:w-1/3 flex flex-col items-center bg-gradient-to-b from-blue-50 to-white rounded-3xl p-6 border border-blue-100 shadow-inner overflow-y-auto">
+            <h2 className="text-2xl font-black text-blue-800 mb-6">Hồ Sơ Hiệp Sĩ</h2>
+            <div className="relative group mb-8 transform hover:scale-105 transition-transform duration-300">
+              <div className="w-40 h-40 rounded-full bg-gradient-to-tr from-yellow-400 via-orange-500 to-red-500 p-1.5 shadow-xl ring-4 ring-white">
+                <img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user?.name || 'User'}`} alt="Avatar" className="w-full h-full rounded-full bg-white object-cover"/>
+              </div>
+              <div className="absolute -bottom-4 left-1/2 transform -translate-x-1/2 bg-blue-600 text-white font-bold px-4 py-1.5 rounded-full shadow-lg whitespace-nowrap border-2 border-white">{user?.name || "Học sinh"}</div>
+            </div>
+            <div className="w-full space-y-4">
+              <div className="flex items-center justify-between px-2">
+                <h3 className="text-sm font-bold text-gray-500 uppercase flex items-center"><Shield size={14} className="mr-1"/> Trang bị ({equipped.length}/5)</h3>
+                <span className="text-xs text-blue-500 font-semibold cursor-pointer hover:underline" onClick={() => {/* clear all logic */}}>Tháo tất cả</span>
+              </div>
+              <div className="grid grid-cols-3 gap-3 justify-items-center">
+                {slots.map(slotIdx => {
+                  const item = equipped[slotIdx];
+                  return (
+                    <div key={slotIdx} className={`w-20 h-20 rounded-2xl flex items-center justify-center relative group cursor-pointer transition-all duration-200 ${item ? 'bg-white shadow-md border-2 border-blue-200' : 'bg-gray-50 border-2 border-dashed border-gray-300 hover:border-blue-300'}`} onClick={() => item && onEquip(item)}> 
+                      {item ? (
+                        <>
+                          <div className="text-3xl filter drop-shadow-sm transform group-hover:scale-110 transition-transform">{item.icon}</div>
+                          <div className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 shadow-sm opacity-0 group-hover:opacity-100 transition-opacity scale-75"><X size={12} strokeWidth={3}/></div>
+                        </>
+                      ) : <span className="text-gray-300 text-xs font-bold select-none">{slotIdx+1}</span>}
+                    </div>
+                  )
+                })}
+              </div>
+              <div className="mt-6 bg-white p-4 rounded-2xl border border-blue-100 shadow-sm flex-1">
+                <p className="text-sm font-bold text-blue-600 mb-2 flex items-center"><Zap size={16} className="mr-1"/> Chỉ số kích hoạt:</p>
+                <div className="space-y-2 max-h-40 overflow-y-auto pr-1 custom-scrollbar">
+                  {equipped.length === 0 ? <p className="text-xs text-gray-400 italic text-center py-4">Chưa trang bị vật phẩm nào.</p> : equipped.map((item, idx) => (<div key={idx} className="flex items-start text-xs text-gray-700 bg-blue-50 p-2 rounded-lg"><span className="mr-2 mt-0.5 text-blue-500">•</span><span><span className="font-bold">{item.name}:</span> {item.effect}</span></div>))}
+                </div>
+              </div>
+            </div>
+          </div>
+          <div className="w-full md:w-2/3 flex flex-col">
+            <div className="flex justify-between items-end mb-4">
+              <h2 className="text-2xl font-black text-gray-800">Kho Đồ Của Bạn</h2>
+              <span className="text-sm font-medium text-gray-500">Đã sở hữu: {inventory.length} vật phẩm</span>
+            </div>
+            <div className="bg-gray-100 rounded-3xl p-1 flex-1 overflow-hidden border border-gray-200">
+              <div className="h-full overflow-y-auto p-4 grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-4 content-start">
+                {inventory.length === 0 ? (
+                  <div className="col-span-full flex flex-col items-center justify-center text-gray-400 h-64"><ShoppingBag size={64} className="mb-4 opacity-20"/><p className="font-bold text-lg">Kho đồ trống trơn</p><p className="text-sm">Hãy kiếm Vàng và ghé Cửa hàng nhé!</p></div>
+                ) : (
+                  inventory.map(item => {
+                    const isEquipped = equipped.some(e => e.id === item.id);
+                    return (
+                      <div key={item.id} className={`relative p-3 rounded-2xl border-2 cursor-pointer transition-all duration-200 flex flex-col items-center text-center group ${isEquipped ? 'border-green-500 bg-green-50 ring-2 ring-green-200 shadow-inner' : 'border-white bg-white shadow-sm hover:shadow-md hover:scale-105 hover:border-blue-300'}`} onClick={() => onEquip(item)}>
+                         <div className="text-4xl mb-3 mt-1 transform group-hover:rotate-6 transition-transform">{item.icon}</div>
+                         <div className="font-bold text-sm text-gray-700 leading-tight mb-1 line-clamp-1">{item.name}</div>
+                         <div className="text-[10px] text-gray-500 line-clamp-2 h-8 leading-tight px-1 mb-1">{item.effect}</div>
+                         {isEquipped && <div className="absolute top-2 right-2 w-3 h-3 bg-green-500 rounded-full border border-white shadow-sm"></div>}
+                         {isEquipped ? <span className="mt-auto text-[10px] font-bold text-green-600 bg-green-100 px-2 py-0.5 rounded-full">Đang dùng</span> : <span className="mt-auto text-[10px] font-bold text-blue-500 opacity-0 group-hover:opacity-100 transition-opacity">Trang bị</span>}
+                      </div>
+                    )
+                  })
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- Game Interface ---
+const GameInterface = ({ game, user, onBack, onUpdateBadges, onEarnCurrency, onSaveGameResult, equippedItems = [] }) => {
+  const [currentQ, setCurrentQ] = useState(null);
+  const [score, setScore] = useState(0);
+  const [streak, setStreak] = useState(0);
+  const [feedback, setFeedback] = useState(null);
+  const [showAchievement, setShowAchievement] = useState(false);
+  const [sessionBadges, setSessionBadges] = useState([]); 
+
+  useEffect(() => { nextQuestion(); }, []);
+  useEffect(() => {
+    const newBadges = [];
+    BADGES_DATA.forEach(badge => {
+      if (badge.condition(score, streak)) {
+        if (!sessionBadges.some(b => b.id === badge.id)) { newBadges.push(badge); }
+      }
+    });
+    if (newBadges.length > 0) {
+      setSessionBadges(prev => [...prev, ...newBadges]);
+      onUpdateBadges(newBadges); 
+    }
+  }, [score, streak]);
+
+  const nextQuestion = () => { setFeedback(null); setCurrentQ(generateQuestion(game.type)); };
+  
+  const handleAnswer = (option) => {
+    if (feedback) return;
+    if (option === currentQ.correct) {
+      setFeedback('correct');
+      const earnedScore = 10 + streak * 2;
+      setScore(s => s + earnedScore);
+      setStreak(s => s + 1);
+      
+      let baseGold = Math.floor(earnedScore / 5);
+      if (equippedItems.some(i => i.id === 'item_potion')) baseGold += 5; 
+      if (equippedItems.some(i => i.id === 'item_sword')) baseGold += 3;
+      if (equippedItems.some(i => i.id === 'item_shoes')) baseGold += 2;
+      if (equippedItems.some(i => i.id === 'item_gem')) baseGold = Math.ceil(baseGold * 1.1);
+      if (equippedItems.some(i => i.id === 'item_sparkle')) baseGold *= 2;
+      if (equippedItems.some(i => i.id === 'first_win')) baseGold = Math.ceil(baseGold * 1.05);
+
+      onEarnCurrency(baseGold); 
+      setTimeout(nextQuestion, 1500);
+    } else { setFeedback('wrong'); setStreak(0); }
+  };
+
+  const handleFinish = () => {
+    // Lưu kết quả khi kết thúc
+    onSaveGameResult(game.id, score);
+    setShowAchievement(true);
+  };
+
+  if (!currentQ) return <div className="text-center p-10">Đang tải câu hỏi...</div>;
+  
+  return (
+    <div className="animate-fade-in pb-20 relative">
+       {showAchievement && (
+          <div className="fixed inset-0 bg-black/80 z-[100] flex items-center justify-center p-4">
+             <div className="bg-white p-6 rounded-2xl max-w-sm w-full text-center animate-scale-up">
+                <Trophy size={48} className="mx-auto text-yellow-500 mb-4" />
+                <h3 className="text-2xl font-bold mb-4">Kết quả phiên học</h3>
+                <div className="bg-gray-50 p-4 rounded-xl mb-4">
+                  <p className="mb-2 text-gray-600">Điểm số: <span className="font-bold text-gray-900">{score}</span></p>
+                  <p className="text-yellow-600 font-bold flex items-center justify-center"><Coins size={16} className="mr-2"/> +{Math.floor(score/5)} Vàng gốc (+Bonus)</p>
+                </div>
+                <button onClick={() => { setShowAchievement(false); onBack(); }} className="bg-blue-600 hover:bg-blue-700 text-white font-bold px-4 py-3 rounded-xl w-full transition-colors">Đóng & Nhận thưởng</button>
+             </div>
+          </div>
+       )}
+      <div className="flex flex-col sm:flex-row items-center justify-between mb-8 bg-white p-4 rounded-2xl shadow-sm border border-gray-100 gap-4 sm:gap-0">
+        <button onClick={() => { onSaveGameResult(game.id, score); onBack(); }} className="flex items-center text-gray-500 hover:text-gray-800 font-bold transition-colors"><ArrowLeft className="mr-2" size={20} /> Thoát (Lưu)</button>
+        <div className="flex items-center space-x-6">
+           <button onClick={handleFinish} className="flex items-center px-4 py-2 bg-yellow-100 text-yellow-700 rounded-full font-bold text-sm hover:bg-yellow-200 transition-colors"><Award size={16} className="mr-2" /> Kết thúc</button>
+           <div className="flex flex-col items-center"><span className="text-xs text-gray-400 font-bold uppercase">Combo</span><span className={`text-xl font-black ${streak > 1 ? 'text-orange-500 animate-bounce' : 'text-gray-600'}`}>x{streak}</span></div>
+           <div className="flex flex-col items-center"><span className="text-xs text-gray-400 font-bold uppercase">Điểm số</span><span className="text-2xl font-black text-blue-600">{score}</span></div>
+        </div>
+      </div>
+      <div className="max-w-2xl mx-auto">
+        <div className={`relative bg-gradient-to-br ${game.color} rounded-3xl p-8 sm:p-12 text-center text-white shadow-2xl mb-8 overflow-hidden transition-all duration-500`}>
+          <h2 className="relative z-10 text-3xl sm:text-5xl font-black drop-shadow-lg mb-4">{currentQ.question}</h2>
+          <div className="relative z-10 inline-flex items-center bg-white/20 px-4 py-1 rounded-full text-sm font-medium backdrop-blur-md border border-white/30"><HelpCircle size={14} className="mr-2" /> Chọn đáp án đúng nhất</div>
+        </div>
+        <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          {currentQ.options.map((opt, idx) => {
+            let btnClass = "bg-white hover:bg-gray-50 border-2 border-gray-200 text-gray-700";
+            if (feedback === 'correct' && opt === currentQ.correct) btnClass = "bg-green-50 border-green-600 text-white ring-4 ring-green-200";
+            else if (feedback === 'wrong' && opt === currentQ.correct) btnClass = "bg-green-100 border-green-300 text-green-700 opacity-70";
+            return <button key={idx} onClick={() => handleAnswer(opt)} disabled={!!feedback} className={`h-20 rounded-2xl text-xl font-bold shadow-sm transition-all duration-200 transform active:scale-95 ${btnClass}`}>{opt}</button>
+          })}
+        </div>
+        {feedback && (
+          <div className={`mt-6 p-4 rounded-xl border-l-4 animate-slide-up ${feedback === 'correct' ? 'bg-green-50 border-green-500 text-green-800' : 'bg-red-50 border-red-500 text-red-800'}`}>
+            <div className="flex items-center mb-1">{feedback === 'correct' ? <CheckCircle className="mr-2" /> : <XCircle className="mr-2" />}<span className="font-bold text-lg">{feedback === 'correct' ? "Chính xác! 🎉" : "Sai rồi! 😅"}</span></div>
+            {feedback === 'correct' && (
+              <div className="flex flex-col mt-1">
+                 <p className="text-sm font-bold text-yellow-600 flex items-center"><Coins size={14} className="mr-1"/> Vàng nhận được đang tính...</p>
+                 {equippedItems.length > 0 && <p className="text-xs text-blue-500 font-semibold">(Đã cộng bonus từ trang bị)</p>}
+              </div>
+            )}
+            {feedback === 'wrong' && <p className="text-sm opacity-90">{currentQ.explain}</p>}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+};
+
+// --- Auth Modal ---
+const AuthModal = ({ onLogin, onRegister, loading }) => {
+  const [isRegistering, setIsRegistering] = useState(false);
+  const [username, setUsername] = useState("");
+  const [pin, setPin] = useState("");
+  const [error, setError] = useState("");
+
+  const handleSubmit = (e) => {
+    e.preventDefault();
+    setError("");
+
+    if (!username.trim() || pin.length !== 3) {
+      setError("Vui lòng nhập tên và mã PIN 3 số.");
+      return;
+    }
+    if (!/^\d{3}$/.test(pin)) {
+      setError("Mã PIN phải là 3 chữ số.");
+      return;
+    }
+
+    if (isRegistering) {
+      onRegister(username, pin, setError);
+    } else {
+      onLogin(username, pin, setError);
+    }
+  };
+
+  return (
+    <div className="fixed inset-0 bg-black/60 z-[90] flex items-center justify-center p-4">
+      <div className="bg-white rounded-3xl p-8 max-w-md w-full shadow-2xl animate-scale-up border-4 border-blue-100">
+        <div className="text-center mb-6">
+          <div className="w-20 h-20 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-4 border-4 border-blue-200">
+            {loading ? <Loader2 size={40} className="text-blue-600 animate-spin" /> : (isRegistering ? <User size={40} className="text-blue-600" /> : <Lock size={40} className="text-blue-600" />)}
+          </div>
+          <h2 className="text-3xl font-black text-gray-800 mb-1">{isRegistering ? "Đăng Ký" : "Đăng Nhập"}</h2>
+          <p className="text-gray-500 font-medium">Tham gia vào thế giới Toán Học!</p>
+        </div>
+        <form onSubmit={handleSubmit} className="space-y-4">
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-1">Tên Hiệp Sĩ</label>
+            <div className="relative">
+              <User className="absolute left-4 top-3.5 text-gray-400" size={20} />
+              <input type="text" value={username} onChange={(e) => setUsername(e.target.value)} className="w-full pl-12 pr-4 py-3 rounded-xl border-2 border-gray-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none font-bold text-lg transition-all" placeholder="VD: SieuNhanToan" autoFocus />
+            </div>
+          </div>
+          <div>
+            <label className="block text-sm font-bold text-gray-700 mb-1">Mã Bảo Mật (3 Số)</label>
+            <div className="relative">
+              <KeyRound className="absolute left-4 top-3.5 text-gray-400" size={20} />
+              <input type="password" maxLength={3} value={pin} onChange={(e) => setPin(e.target.value.replace(/\D/g, ''))} className="w-full pl-12 pr-4 py-3 rounded-xl border-2 border-gray-200 focus:border-blue-500 focus:ring-4 focus:ring-blue-100 outline-none font-black text-2xl tracking-widest transition-all" placeholder="***" />
+            </div>
+          </div>
+          {error && <div className="bg-red-50 text-red-600 p-3 rounded-lg text-sm font-bold flex items-center"><XCircle size={16} className="mr-2" /> {error}</div>}
+          <button disabled={loading} type="submit" className="w-full bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-700 text-white font-black py-4 rounded-xl text-lg shadow-lg hover:shadow-xl hover:-translate-y-1 transition-all mt-2 disabled:opacity-70 disabled:cursor-not-allowed">
+            {loading ? "Đang xử lý..." : (isRegistering ? "Tạo Tài Khoản Mới 🚀" : "Vào Game Ngay ▶️")}
+          </button>
+        </form>
+        <div className="mt-6 text-center">
+          <button disabled={loading} onClick={() => { setIsRegistering(!isRegistering); setError(""); setUsername(""); setPin(""); }} className="text-blue-600 font-bold hover:underline hover:text-blue-800 transition-colors">{isRegistering ? "Đã có tài khoản? Đăng nhập" : "Chưa có tài khoản? Đăng ký ngay"}</button>
+        </div>
+      </div>
+    </div>
+  );
+};
+
+// --- Game Card Mới (Hiển thị Sao thực tế) ---
+const GameCard = ({ game, onClick, history }) => {
+  const gameHistory = history && history[game.id] ? history[game.id] : { highScore: 0 };
+  const score = gameHistory.highScore;
+  
+  let stars = 0;
+  if (score >= 100) stars = 3;
+  else if (score >= 50) stars = 2;
+  else if (score >= 20) stars = 1;
+
+  return (
+    <div onClick={() => onClick(game)} className={`group relative h-64 rounded-3xl p-6 flex flex-col justify-between bg-gradient-to-br ${game.color} cursor-pointer shadow-xl transition-all hover:scale-105 hover:-translate-y-2`}>
+      <div className="absolute top-0 right-0 -mr-8 -mt-8 w-32 h-32 rounded-full bg-white opacity-10 group-hover:scale-150 transition-transform duration-500"></div>
+      <div className="flex justify-between items-start z-10"><span className="bg-white/20 text-white text-xs font-bold px-3 py-1 rounded-full backdrop-blur-sm">{game.grade}</span><div className="bg-white/20 p-3 rounded-2xl backdrop-blur-sm">{game.icon}</div></div>
+      <div className="z-10 mt-2"><h3 className="text-white text-xl font-extrabold mb-1 drop-shadow-md">{game.title}</h3><p className="text-white/90 text-sm font-medium line-clamp-2">{game.desc}</p></div>
+      <div className="flex justify-between items-center z-10 mt-2">
+        <span className="text-white/80 text-xs font-semibold uppercase">{game.subject}</span>
+        <div className="flex items-center space-x-1">
+          {[...Array(3)].map((_,i)=><Star key={i} size={16} className={`${i<stars?"fill-yellow-300 text-yellow-300":"text-white/40"}`}/>)}
+        </div>
+      </div>
+      {score > 0 && (
+         <div className="absolute bottom-6 right-6 z-0 opacity-20 text-5xl font-black text-white">{score}</div>
+      )}
+    </div>
+  );
+};
+
+const Header = ({ user, currency, onOpenShop, onOpenProfile, onLogout, onOpenAdmin }) => (
+  <header className="bg-white/90 backdrop-blur-md sticky top-0 z-50 border-b border-gray-100 px-4 py-3 shadow-sm transition-all">
+    <div className="max-w-7xl mx-auto flex justify-between items-center">
+      <div className="flex items-center space-x-3">
+        <div className="bg-gradient-to-r from-blue-500 to-purple-600 p-2 rounded-xl text-white shadow-lg"><Gamepad2 size={24} /></div>
+        <h1 className="text-xl font-black text-gray-800 hidden sm:block tracking-tight">TOÁN <span className="text-blue-600">GAMIFIED</span></h1>
+      </div>
+      <div className="flex items-center space-x-4">
+        {user && user.isAdmin && (
+           <button onClick={onOpenAdmin} className="p-2 bg-red-100 text-red-600 rounded-full hover:bg-red-200 transition-colors" title="Admin Panel">
+             <Settings size={20} />
+           </button>
+        )}
+        {user && (
+          <>
+            <div className="flex items-center bg-yellow-100 text-yellow-800 px-4 py-1.5 rounded-full font-bold text-sm cursor-pointer hover:bg-yellow-200 transition-colors shadow-sm border border-yellow-200" onClick={onOpenShop}>
+              <Coins size={16} className="mr-1.5 fill-yellow-500" /> {currency}
+            </div>
+            <button onClick={onOpenShop} className="p-2 bg-gray-100 rounded-full hover:bg-gray-200 text-gray-600 transition-colors" title="Cửa hàng"><ShoppingBag size={20}/></button>
+            <div className="flex items-center space-x-2 cursor-pointer group" onClick={onOpenProfile}>
+               <div className="text-right hidden sm:block"><span className="block text-sm font-bold text-gray-800">{user.name}</span><span className="text-[10px] text-gray-500 uppercase font-bold tracking-wider">{user.isAdmin ? 'Quản trị viên' : 'Học viên'}</span></div>
+               <div className="w-10 h-10 rounded-full bg-gradient-to-tr from-yellow-400 to-orange-500 p-0.5 group-hover:ring-4 ring-blue-100 transition-all shadow-md"><img src={`https://api.dicebear.com/7.x/avataaars/svg?seed=${user.name}`} alt="Avatar" className="w-full h-full rounded-full bg-white"/></div>
+            </div>
+            <button onClick={onLogout} className="p-2 bg-red-50 text-red-500 rounded-full hover:bg-red-100 transition-colors" title="Đăng xuất">
+              <LogOut size={20} />
+            </button>
+          </>
+        )}
+        {!user && <span className="text-sm font-bold text-blue-600">Khách</span>}
+      </div>
+    </div>
+  </header>
+);
+
+const App = () => {
+  const [activeGame, setActiveGame] = useState(null);
+  const [user, setUser] = useState(null);
+  const [showAuthModal, setShowAuthModal] = useState(true);
+  const [inventory, setInventory] = useState([]);
+  const [equippedItems, setEquippedItems] = useState([]);
+  const [currency, setCurrency] = useState(500); 
+  const [gameHistory, setGameHistory] = useState({}); 
+
+  const [showShop, setShowShop] = useState(false);
+  const [showProfile, setShowProfile] = useState(false);
+  const [showAdmin, setShowAdmin] = useState(false); 
+  const [loadingAuth, setLoadingAuth] = useState(false);
+
+  // --- Initialize Auth & Data Sync ---
+  useEffect(() => {
+    const initAuth = async () => {
+      try {
+        if (typeof __initial_auth_token !== 'undefined' && __initial_auth_token) {
+          await signInWithCustomToken(auth, __initial_auth_token);
+        } else {
+          await signInAnonymously(auth);
+        }
+      } catch (error) {
+        console.error("Auth Error:", error);
+      }
+    };
+    initAuth();
+  }, []);
+
+  // --- Logic Persistence using Firebase ---
+  
+  const handleRegister = async (username, pin, setError) => {
+    if (username.toLowerCase() === 'admin') {
+      setError("Không thể đăng ký tên 'admin'.");
+      return;
+    }
+    setLoadingAuth(true);
+    try {
+      const userRef = getUserRef(username);
+      const userSnap = await getDoc(userRef);
+
+      if (userSnap.exists()) {
+        setError("Tên hiệp sĩ này đã có người dùng! Hãy chọn tên khác.");
+        setLoadingAuth(false);
+        return;
+      }
+      
+      const newUser = {
+        pin: pin,
+        inventory: [],
+        equippedItems: [],
+        history: {},
+        currency: 500,
+        createdAt: new Date().toISOString()
+      };
+      
+      await setDoc(userRef, newUser);
+      
+      setUser({ name: username, isAdmin: false });
+      setInventory(newUser.inventory);
+      setEquippedItems(newUser.equippedItems);
+      setGameHistory(newUser.history);
+      setCurrency(newUser.currency);
+      setShowAuthModal(false);
+      alert("Đăng ký thành công! Hãy nhớ tên và mã PIN nhé.");
+    } catch (e) {
+      console.error(e);
+      setError("Lỗi kết nối Server. Vui lòng thử lại.");
+    } finally {
+      setLoadingAuth(false);
+    }
+  };
+
+  const handleLogin = async (username, pin, setError) => {
+    if (username.toLowerCase() === 'admin' && pin === '999') {
+      setUser({ name: 'Admin', isAdmin: true });
+      setInventory([]);
+      setEquippedItems([]);
+      setGameHistory({});
+      setCurrency(99999);
+      setShowAuthModal(false);
+      return;
+    }
+    
+    setLoadingAuth(true);
+    try {
+      const userRef = getUserRef(username);
+      const userSnap = await getDoc(userRef);
+
+      if (!userSnap.exists()) {
+        setError("Không tìm thấy hiệp sĩ này. Vui lòng đăng ký trước.");
+        setLoadingAuth(false);
+        return;
+      }
+
+      const userData = userSnap.data();
+      if (userData.pin !== pin) {
+        setError("Mật khẩu sai rồi! Hãy thử lại.");
+        setLoadingAuth(false);
+        return;
+      }
+
+      setUser({ name: username, isAdmin: false });
+      // Hydrate items
+      setInventory(hydrateItems(userData.inventory || []));
+      setEquippedItems(hydrateItems(userData.equippedItems || []));
+      setGameHistory(userData.history || {});
+      setCurrency(userData.currency !== undefined ? userData.currency : 500);
+      setShowAuthModal(false);
+    } catch (e) {
+      console.error(e);
+      setError("Lỗi đăng nhập: " + e.message);
+    } finally {
+      setLoadingAuth(false);
+    }
+  };
+
+  // Auto-save logic to Firestore
+  useEffect(() => {
+    if (user && user.name && !user.isAdmin) {
+      const userRef = getUserRef(user.name);
+      const saveData = async () => {
+        try {
+           // Dehydrate items (save IDs only)
+           const inventoryIds = inventory.map(i => i.id);
+           const equippedIds = equippedItems.map(i => i.id);
+
+           await updateDoc(userRef, {
+             inventory: inventoryIds,
+             equippedItems: equippedIds,
+             currency,
+             history: gameHistory
+           });
+           console.log("Synced to Cloud");
+        } catch (e) {
+          console.error("Sync Failed", e);
+        }
+      };
+      saveData();
+    }
+  }, [inventory, equippedItems, currency, gameHistory, user]);
+
+  const handleLogout = () => {
+    setUser(null);
+    setInventory([]);
+    setEquippedItems([]);
+    setGameHistory({});
+    setCurrency(500);
+    setShowAuthModal(true);
+    setShowProfile(false);
+    setShowShop(false);
+    setShowAdmin(false);
+    setActiveGame(null);
+  };
+
+  const updateInventoryWithBadge = (newBadges) => {
+    const uniqueBadges = newBadges.filter(nb => !inventory.some(existing => existing.id === nb.id));
+    if (uniqueBadges.length > 0) { setInventory(prev => [...prev, ...uniqueBadges]); }
+  };
+  const handleBuyItem = (item) => {
+    if (currency >= item.price) { setCurrency(c => c - item.price); setInventory(prev => [...prev, item]); }
+  };
+  const handleEquipItem = (item) => {
+    if (equippedItems.some(e => e.id === item.id)) { setEquippedItems(prev => prev.filter(e => e.id !== item.id)); } 
+    else {
+      if (equippedItems.length < 5) { setEquippedItems(prev => [...prev, item]); } 
+      else { setEquippedItems(prev => [...prev.slice(1), item]); }
+    }
+  };
+  const earnCurrency = (amount) => { setCurrency(c => c + amount); };
+  
+  const handleSaveGameResult = (gameId, score) => {
+    if (user && user.isAdmin) return; 
+
+    setGameHistory(prev => {
+      const current = prev[gameId] || { highScore: 0, played: 0 };
+      const newHistory = {
+        highScore: Math.max(current.highScore, score),
+        played: current.played + 1
+      };
+      return { ...prev, [gameId]: newHistory };
+    });
+  };
+
+  return (
+    <div className="min-h-screen bg-slate-50 font-nunito selection:bg-blue-200 selection:text-blue-900 flex flex-col">
+      <style>{`
+        @import url('https://fonts.googleapis.com/css2?family=Nunito:wght@400;600;700;800;900&display=swap');
+        .font-nunito { font-family: 'Nunito', sans-serif; }
+        .custom-scrollbar::-webkit-scrollbar { width: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 4px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        @keyframes slideUp { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+        @keyframes scaleUp { from { opacity: 0; transform: scale(0.95); } to { opacity: 1; transform: scale(1); } }
+        .animate-slide-up { animation: slideUp 0.3s ease-out forwards; }
+        .animate-scale-up { animation: scaleUp 0.3s ease-out forwards; }
+      `}</style>
+
+      {showAuthModal && <AuthModal onLogin={handleLogin} onRegister={handleRegister} loading={loadingAuth} />}
+      
+      <ShopModal isOpen={showShop} onClose={() => setShowShop(false)} currency={currency} onBuy={handleBuyItem} inventory={inventory} />
+      <ProfileModal isOpen={showProfile} onClose={() => setShowProfile(false)} user={user} inventory={inventory} equipped={equippedItems} onEquip={handleEquipItem} />
+      
+      {showAdmin && <AdminPanel onClose={() => setShowAdmin(false)} />}
+
+      <TopBanner />
+
+      <Header 
+        user={user} 
+        currency={currency} 
+        onOpenShop={() => setShowShop(true)} 
+        onOpenProfile={() => setShowProfile(true)} 
+        onLogout={handleLogout}
+        onOpenAdmin={() => setShowAdmin(true)} 
+      />
+
+      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 flex-grow w-full">
+        {activeGame ? (
+          <GameInterface 
+            game={activeGame} 
+            user={user}
+            onBack={() => setActiveGame(null)} 
+            onUpdateBadges={updateInventoryWithBadge}
+            onEarnCurrency={earnCurrency}
+            onSaveGameResult={handleSaveGameResult}
+            equippedItems={equippedItems} 
+          />
+        ) : (
+          <div className="animate-slide-up">
+            <div className="mb-8 bg-indigo-600 rounded-3xl p-8 text-white relative overflow-hidden shadow-xl">
+              <div className="absolute top-0 right-0 -mr-16 -mt-16 w-64 h-64 rounded-full bg-white opacity-10"></div>
+              <div className="relative z-10 flex flex-col md:flex-row justify-between items-center gap-4">
+                <div>
+                   <h2 className="text-3xl font-black mb-2">Xin chào, {user?.name || "Bạn nhỏ"}! 👋</h2>
+                   <p className="text-indigo-100 text-lg">Bạn đang có <span className="font-bold text-yellow-300 inline-flex items-center bg-indigo-500/50 px-2 py-0.5 rounded-lg border border-indigo-400/30"><Coins size={16} className="mr-1 fill-yellow-300"/> {currency} Vàng</span></p>
+                </div>
+                <button onClick={() => setShowShop(true)} className="bg-white text-indigo-600 px-6 py-3 rounded-xl font-bold hover:bg-indigo-50 transition shadow-lg flex items-center transform hover:scale-105 active:scale-95">
+                  <ShoppingBag size={20} className="mr-2"/> Ghé Cửa Hàng
+                </button>
+              </div>
+            </div>
+
+            <h3 className="text-xl font-bold text-gray-700 mb-4 px-2">Chọn thử thách của bạn</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6 pb-20">
+              {GAMES_DATA.map((game) => (
+                <GameCard 
+                  key={game.id} 
+                  game={game} 
+                  onClick={setActiveGame} 
+                  history={gameHistory} 
+                />
+              ))}
+            </div>
+          </div>
+        )}
+      </main>
+
+      <Footer />
+    </div>
+  );
+};
+
+export default App;
